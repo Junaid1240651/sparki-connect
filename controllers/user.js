@@ -67,7 +67,6 @@ const signup = async (req, res) => {
       subject: "Sparki Connect OTP",
       html: getHtmlContent(otp, first_name, last_name, 'Signup'),
     };
-    console.log("mailOptions", mailOptions);
     
     transporter.sendMail(mailOptions, (err, info) => {
       if (err) {
