@@ -1,0 +1,117 @@
+-- Create `users` table if it doesn't exist
+CREATE TABLE IF NOT EXISTS users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  first_name VARCHAR(255),
+  last_name VARCHAR(255),
+  email VARCHAR(255) UNIQUE NOT NULL,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  mobile_number VARCHAR(255),
+  social_login_type ENUM('Facebook', 'Gmail', 'Mobile'),
+  user_type ENUM('admin', 'visitor'),
+  profile_picture VARCHAR(255),
+  country VARCHAR(255),
+  status ENUM('active', 'deactivated', 'pending') DEFAULT 'active',
+  verified BOOLEAN DEFAULT false,
+  otp VARCHAR(6) DEFAULT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Create the `notifications` table
+CREATE TABLE notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Create the categories table
+CREATE TABLE IF NOT EXISTS `categories` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(255) NOT NULL,
+  `description` TEXT,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Create the community_posts table
+CREATE TABLE IF NOT EXISTS `community_posts` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `title` VARCHAR(255) NOT NULL,
+  `body` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Create the remedies table
+CREATE TABLE IF NOT EXISTS `remedies` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `category_id` INT,
+  `title` VARCHAR(255) NOT NULL,
+  `ingredients` TEXT,
+  `preparation_process` TEXT,
+  `application_process` TEXT,
+  `benefits` TEXT,
+  `photo` VARCHAR(255),
+  `video` VARCHAR(255),
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`category_id`) REFERENCES `categories`(`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Create reviews table
+CREATE TABLE `reviews` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `remedy_id` INT NOT NULL,
+  `user_id` INT NOT NULL,
+  `rating` INT CHECK (rating >= 1 AND rating <= 5),
+  `review` TEXT,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  FOREIGN KEY (`remedy_id`) REFERENCES `remedies`(`id`) ON DELETE CASCADE,
+  FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Create the ai_filter_logs table
+CREATE TABLE ai_filter_logs (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    content_type ENUM('review', 'community_post', 'community_comment') NOT NULL,
+    content_id INT NOT NULL,
+    flagged_for VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Create the `community_comments` table if it does not already exist
+CREATE TABLE IF NOT EXISTS community_comments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    post_id INT NOT NULL,
+    user_id INT NOT NULL,
+    comment TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Foreign key constraints
+    FOREIGN KEY (post_id) REFERENCES community_posts(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Create the forget_password table
+CREATE TABLE IF NOT EXISTS forget_password (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    token VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Ensure email is a valid reference to an existing user if needed
+    FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE,
+    
+    -- Ensure the email is unique in the forget_password table
+    UNIQUE (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
