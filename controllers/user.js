@@ -8,46 +8,65 @@ import nodemailer from "nodemailer";
 import crypto from "crypto";
 
 const signup = async (req, res) => {
-  const userData = req.body;
-
-  if (_.isEmpty(userData)) {
-    return res.status(400).json({ message: "No data received" });
-  }
-
-  const {
-    first_name,
-    last_name,
-    email,
-    password,
-    hear_about_us,
-    user_type,
-  } = userData;
-
-  const validUserTypes = ["admin", "visitor"];
-  if (!validUserTypes.includes(user_type)) {
-    return res.status(400).json({ message: "Invalid user type", status: "error", statusCode: 400 });
-  }
-
   try {
-    // Check if user already exists by email
-    const existingUser = await userQuery(`SELECT * FROM users WHERE email = ?`, [email]);
-    if (existingUser.length > 0) {
-      return res.status(400).json({ message: "Email already exists", status: "error", statusCode: 400 });
+    const userData = req.body;
+
+    // ✅ Test Case 1: No data received
+    if (!userData || _.isEmpty(userData)) {
+      return res.status(400).json({ message: "No data received", status: "error", statusCode: 400 });
     }
 
-    // Generate OTP
+    const {
+      first_name = '',
+      last_name = '',
+      email = '',
+      password = '',
+      hear_about_us = '',
+      user_type = '',
+    } = userData;
+
+    // ✅ Test Case 2: Required fields validation
+    if (!first_name || !last_name || !email || !password || !user_type) {
+      return res.status(400).json({
+        message: "Missing required fields",
+        status: "error",
+        statusCode: 400,
+      });
+    }
+
+    // ✅ Test Case 3: Invalid email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({ message: "Invalid email format", status: "error", statusCode: 400 });
+    }
+
+    // ✅ Test Case 4: Weak password
+    if (password.length < 6) {
+      return res.status(400).json({ message: "Password must be at least 6 characters long", status: "error", statusCode: 400 });
+    }
+
+    // ✅ Test Case 5: Invalid user type
+    const validUserTypes = ["admin", "visitor"];
+    if (!validUserTypes.includes(user_type)) {
+      return res.status(400).json({ message: "Invalid user type", status: "error", statusCode: 400 });
+    }
+
+    // ✅ Test Case 6: Email already exists
+    const existingUser = await userQuery(`SELECT * FROM users WHERE email = ?`, [email]);
+    if (existingUser.length > 0) {
+      return res.status(409).json({ message: "Email already exists", status: "error", statusCode: 409 });
+    }
+
+    // ✅ OTP Generation
     const otp = crypto.randomInt(100000, 999999).toString();
     const otpTimestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
-
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Save user in DB (simplified fields)
+    // ✅ Insert user into DB
     await userQuery(
-      `
-      INSERT INTO users 
+      `INSERT INTO users 
         (first_name, last_name, email, password, hear_about_us, user_type, status, otp, otpTimestamp)
-      VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)
-      `,
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
       [
         first_name,
         last_name,
@@ -60,28 +79,38 @@ const signup = async (req, res) => {
       ]
     );
 
-    // Send OTP email
+    // ✅ Send OTP Email
     const mailOptions = {
       from: "Sparki Connect",
       to: email,
       subject: "Sparki Connect OTP",
-      html: getHtmlContent(otp, first_name, last_name, 'Signup'),
+      html: getHtmlContent(otp, first_name, last_name, "Signup"),
     };
-    
-    transporter.sendMail(mailOptions, (err, info) => {
+
+    transporter.sendMail(mailOptions, (err) => {
       if (err) {
         console.error("Error sending OTP email:", err);
-        return res.status(500).json({ message: "Error sending OTP email", status: "error", statusCode: 400 });
+        return res.status(500).json({ message: "Failed to send OTP email", status: "error", statusCode: 500 });
       }
-      res.status(200).json({ message: "OTP sent to your email", status: "success", statusCode: 200 });
+
+      return res.status(200).json({
+        message: "OTP sent to your email",
+        status: "success",
+        statusCode: 200,
+      });
     });
 
   } catch (err) {
-    console.error("Error during signup OTP:", err);
-    res.status(500).json({ message: "Error while processing signup", status: "error", statusCode: 500 });
+    console.error("Error during signup:", err);
+
+    // ✅ Test Case 7: Unexpected error
+    return res.status(500).json({
+      message: "Internal server error during signup",
+      status: "error",
+      statusCode: 500,
+    });
   }
 };
-
 
 const verifyOtpAndCompleteSignup = async (req, res) => {
   const { email, otp } = req.body;
@@ -152,125 +181,166 @@ const verifyOtpAndCompleteSignup = async (req, res) => {
 const login = async (req, res) => {
   const { email, password, token } = req.body;
 
-  if (token) {
-    try {
-      // Verify the token
-      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+  try {
+    // 1. Login via Token
+    if (token) {
+      let decoded;
+      try {
+        decoded = jwt.verify(token, process.env.JWT_SECRET);
+      } catch (err) {
+        console.error("JWT verification failed:", err);
+        return res.status(401).json({
+          message: "Invalid or expired token",
+          status: "error",
+          statusCode: 401,
+        });
+      }
 
-      // Fetch user details from the database using the decoded userId
-      const userResults = await userQuery(
-        `SELECT * FROM users WHERE id = ?`,
-        [decoded.userId]
-      );
-
+      const userResults = await userQuery(`SELECT * FROM users WHERE id = ?`, [decoded.userId]);
       const user = userResults[0];
+
       if (!user) {
-        return res.status(404).json({ message: "Invalid token", status: "error", statusCode: 400 });
+        return res.status(404).json({
+          message: "User not found for provided token",
+          status: "error",
+          statusCode: 404,
+        });
       }
 
-      // Check if the user account is active
       if (user.status !== "active") {
-        return res.status(403).json({ message: "Account is not active", status: "error", statusCode: 400 });
+        return res.status(403).json({
+          message: "Account is not active",
+          status: "error",
+          statusCode: 403,
+        });
       }
 
-      res.cookie("token", token, {
+      const tokenPayload = {
+        userId: user.id,
+        userType: user.user_type,
+      };
+
+      const newToken = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+      res.cookie("token", newToken, {
         httpOnly: true,
         secure: process.env.NODE_ENV === "production",
-        maxAge: 3600000, // 1 hour expiration for the cookie
+        maxAge: 3600000,
       });
 
       return res.status(200).json({
         message: "Login successful",
-        user: { id: user.id, email: user.email, token: token, fullName: `${user.first_name} ${user.last_name}`, hear_about_us: user.hear_about_us, trade_level: user.trade_level, about_us: user.about_us, profile_picture: user.profile_picture, account: user.status, location: { latitude: user.latitude, longitude: user.longitude, location: user.location } },
-        status: "success", statusCode: 200
+        user: buildUserResponse(user, newToken),
+        status: "success",
+        statusCode: 200,
       });
-    } catch (err) {
-      console.error("Error during token-based login:", err);
-      return res.status(401).json({ message: "Invalid or expired token", status: "error", statusCode: 400 });
     }
-  } else {
+
+    // 2. Login via Credentials
     if (!email || !password) {
-      return res
-        .status(400)
-        .json({ message: "Email and Password are required", status: "error", statusCode: 400 });
+      return res.status(400).json({
+        message: "Email and Password are required",
+        status: "error",
+        statusCode: 400,
+      });
     }
 
-  try {
-    // Check if the user with the provided email exists
-    const userResults = await userQuery(
-      `SELECT * FROM users WHERE email = ?`,
-      [email]
-    );
-
+    const userResults = await userQuery(`SELECT * FROM users WHERE email = ?`, [email]);
     const user = userResults[0];
+
     if (!user) {
-      return res.status(404).json({ message: "Invalid credentials", status: "error", statusCode: 400 });
+      return res.status(404).json({
+        message: "Invalid credentials",
+        status: "error",
+        statusCode: 404,
+      });
     }
 
-    // Compare the provided password with the stored hashed password
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid password", status: "error", statusCode: 400 });
+      return res.status(401).json({
+        message: "Invalid password",
+        status: "error",
+        statusCode: 401,
+      });
     }
 
-    // Check if user account is active
+    // Account not active: send OTP
     if (user.status !== "active") {
-      // Generate OTP
       const otp = crypto.randomInt(100000, 999999).toString();
-
-      // Save the OTP and timestamp in the database
       const otpTimestamp = new Date().toISOString().slice(0, 19).replace("T", " ");
 
-      // replace the OTP and timestamp in the database
+      await userQuery(`UPDATE users SET otp = ?, otpTimestamp = ? WHERE id = ?`, [otp, otpTimestamp, user.id]);
 
-      const updateOtpQuery = `UPDATE users SET otp = ?, otpTimestamp = ? WHERE id = ?`;
-      await userQuery(updateOtpQuery, [otp, otpTimestamp, user.id]);
-
-      // Send OTP via email
       const mailOptions = {
         from: "Sparki Connect",
         to: user.email,
         subject: "Sparki Connect OTP",
-        html: getHtmlContent(otp,user.first_name,user.last_name, 'Login'),
+        html: getHtmlContent(otp, user.first_name, user.last_name, "Login"),
       };
 
       await transporter.sendMail(mailOptions);
-      return res.status(200).json({ message: "OTP sent to your email" });
+
+      return res.status(200).json({
+        message: "Account is not active. OTP sent to your email.",
+        status: "pending",
+        statusCode: 200,
+      });
     }
 
-    const token = jwt.sign(
-      { userId: userResults[0].id, userType: userResults[0].user_type },
-      process.env.JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    // User is active: generate token and login
+    const payload = {
+      userId: user.id,
+      userType: user.user_type,
+    };
 
-    // Generate a JWT token
-    res.cookie("token", token, {
+    const jwtToken = jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+    res.cookie("token", jwtToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hour expiration for the cookie
+      maxAge: 3600000,
     });
 
-    // Set the JWT token as a session cookie
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 3600000, // 1 hour expiration for the cookie
-    });
     console.log("User logged in successfully:", user.id, user.email);
-    
-    res.status(200).json({
+
+    return res.status(200).json({
       message: "Login successful",
-      user: { id: user.id, email: user.email, token: token, fullName: `${user.first_name} ${user.last_name}`, hear_about_us: user.hear_about_us, trade_level: user.trade_level, about_us: user.about_us, profile_picture: user.profile_picture, account: user.status, location: { latitude: user.latitude, longitude: user.longitude, location: user.location }, userType: user.user_type },  
+      user: buildUserResponse(user, jwtToken),
       status: "success",
-      statusCode: 200
+      statusCode: 200,
     });
+
   } catch (err) {
     console.error("Error during login:", err);
-    res.status(500).json({ message: "Internal server error", status: "error", statusCode: 500 });
+    return res.status(500).json({
+      message: "Internal server error",
+      status: "error",
+      statusCode: 500,
+    });
   }
-}
 };
+
+// Extract only necessary user fields
+function buildUserResponse(user, token) {
+  return {
+    id: user.id,
+    email: user.email,
+    token: token,
+    fullName: `${user.first_name} ${user.last_name}`,
+    hear_about_us: user.hear_about_us,
+    trade_level: user.trade_level,
+    about_us: user.about_us,
+    profile_picture: user.profile_picture,
+    account: user.status,
+    userType: user.user_type,
+    location: {
+      latitude: user.latitude,
+      longitude: user.longitude,
+      location: user.location,
+    },
+  };
+}
 
 function getHtmlContent(otp,first_name,last_name, otp_type) {
   return `
