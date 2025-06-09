@@ -11,6 +11,7 @@ import { dbConnection } from "./db/connection.js";
 // Route imports
 import userRoutes from "./routes/user.js";
 import wholesalerRoutes from "./routes/wholeseller.js"; 
+import educationRoutes from "./routes/education.js"; // Assuming you have an education route
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -42,6 +43,7 @@ app.use(
 // Routes
 app.use("/api/user", userRoutes);
 app.use("/api/wholesaler", wholesalerRoutes);
+app.use("/api/education", educationRoutes);
 
 // Error handling
 app.use((err, req, res, next) => {

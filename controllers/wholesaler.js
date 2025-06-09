@@ -178,7 +178,143 @@ const getWholesalers = async (req, res) => {
     }
 };
 
+const updateWholesaler = async (req, res) => {
+    const { id } = req.params;
+    const {
+        store_name,
+        current_status,
+        open_time,
+        close_time,
+        distance,
+        duration,
+        email,
+        location,
+        longitude,
+        latitude
+    } = req.body;
+
+    const user = req.user;
+
+    // Check if the userType is admin
+    if (!user || user.userType !== "admin") {
+        return res.status(403).json({
+            error: "Forbidden",
+            message: "You are not authorized to perform this action",
+            statusCode: 403,
+            status: "error"
+        });
+    }
+
+    // Collect all fields that are provided
+    const fieldsToUpdate = {};
+    if (store_name !== undefined) fieldsToUpdate.store_name = store_name;
+    if (current_status !== undefined) fieldsToUpdate.current_status = current_status;
+    if (open_time !== undefined) fieldsToUpdate.open_time = open_time;
+    if (close_time !== undefined) fieldsToUpdate.close_time = close_time;
+    if (distance !== undefined) fieldsToUpdate.distance = distance;
+    if (duration !== undefined) fieldsToUpdate.duration = duration;
+    if (email !== undefined) fieldsToUpdate.email = email;
+    if (location !== undefined) fieldsToUpdate.location = location;
+    if (longitude !== undefined) fieldsToUpdate.longitude = longitude;
+    if (latitude !== undefined) fieldsToUpdate.latitude = latitude;
+
+    // Check if at least one field is provided
+    if (Object.keys(fieldsToUpdate).length === 0) {
+        return res.status(400).json({
+            error: "Bad Request",
+            message: "At least one field must be provided to update",
+            statusCode: 400,
+            status: "error",
+        });
+    }
+
+    try {
+        // Build SET clause dynamically
+        const setClause = Object.keys(fieldsToUpdate)
+            .map(field => `${field} = ?`)
+            .join(", ");
+
+        const values = Object.values(fieldsToUpdate);
+        values.push(id); // for the WHERE clause
+
+        const query = `UPDATE wholesalers SET ${setClause} WHERE id = ?`;
+
+        const result = await userQuery(query, values);
+        console.log("Update Result:", result);
+        
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                error: "Not Found",
+                message: "Wholesaler not found",
+                statusCode: 404,
+                status: "error"
+            });
+        }
+
+        return res.status(200).json({
+            message: "Wholesaler updated successfully",
+            statusCode: 200,
+            status: "success",
+        });
+
+    } catch (error) {
+        console.error("DB Error:", error);
+        return res.status(500).json({
+            error: "Internal Server Error",
+            message: error.message,
+            statusCode: 500,
+            status: "error"
+        });
+    }
+}
+
+const deleteWholesaler = async (req, res) => {
+    const { id } = req.params;
+    const user = req.user;
+
+    // Check if the userType is admin
+    if (!user || user.userType !== "admin") {
+        return res.status(403).json({
+            error: "Forbidden",
+            message: "You are not authorized to perform this action",
+            statusCode: 403,
+            status: "error"
+        });
+    }
+
+    try {
+        const query = `DELETE FROM wholesalers WHERE id = ?`;
+        const result = await userQuery(query, [id]);
+
+        if (result.affectedRows === 0) {
+            return res.status(404).json({
+                error: "Not Found",
+                message: "Wholesaler not found",
+                statusCode: 404,
+                status: "error"
+            });
+        }
+
+        return res.status(200).json({
+            message: "Wholesaler deleted successfully",
+            statusCode: 200,
+            status: "success",
+        });
+
+    } catch (error) {
+        console.error("DB Error:", error);
+        return res.status(500).json({
+            error: "Internal Server Error",
+            message: error.message,
+            statusCode: 500,
+            status: "error"
+        });
+    }
+}
+
 export default {
     addWholesaler,
-    getWholesalers
+    getWholesalers,
+    updateWholesaler,
+    deleteWholesaler
 }
