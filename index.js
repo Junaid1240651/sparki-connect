@@ -11,7 +11,11 @@ import { dbConnection } from "./db/connection.js";
 // Route imports
 import userRoutes from "./routes/user.js";
 import wholesalerRoutes from "./routes/wholeseller.js"; 
-import educationRoutes from "./routes/education.js"; // Assuming you have an education route
+import educationRoutes from "./routes/education.js"; 
+import educationResourceContent from "./routes/educationResourceContent.js";
+import educationUserTrack from "./routes/educationUserTrack.js";
+import educationFilter from "./routes/educationFilter.js";
+import question from "./routes/question.js";
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -44,7 +48,10 @@ app.use(
 app.use("/api/user", userRoutes);
 app.use("/api/wholesaler", wholesalerRoutes);
 app.use("/api/education", educationRoutes);
-
+app.use("/api/educationResourceContent", educationResourceContent);
+app.use("/api/educationUserTrack", educationUserTrack);
+app.use("/api/educationFilter", educationFilter);
+app.use("/api/question", question);
 // Error handling
 app.use((err, req, res, next) => {
   console.error(err.stack);

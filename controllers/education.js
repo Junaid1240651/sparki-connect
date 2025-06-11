@@ -8,9 +8,9 @@ const addEducationResource = async (req, res) => {
     const user = req.user;
 
     // Allowed levels
-    const validLevels = ['All Levels', 'Beginner', 'Medium', 'Expert'];
+    const validLevels = ['Beginner', 'Medium', 'Expert'];
 
-    // Check if user is admin
+    // Check admin privileges
     if (!user || user.userType !== "admin") {
         return res.status(403).json({
             error: "Forbidden",
@@ -20,6 +20,7 @@ const addEducationResource = async (req, res) => {
         });
     }
 
+    // Validate level
     if (!validLevels.includes(level)) {
         return res.status(400).json({
             error: "Bad Request",
@@ -29,9 +30,8 @@ const addEducationResource = async (req, res) => {
         });
     }
 
-    // Validate all fields are present and of correct type
+    // Validate required fields
     const errors = [];
-
     if (!title || typeof title !== "string") errors.push("title (string) is required");
     if (!description || typeof description !== "string") errors.push("description (string) is required");
     if (!read_time || typeof read_time !== "string") errors.push("read_time (string) is required");
@@ -51,12 +51,12 @@ const addEducationResource = async (req, res) => {
 
     try {
         // Check for duplicate title
-        const [existingResource] = await userQuery(
+        const [existing] = await userQuery(
             "SELECT 1 FROM education WHERE title = ? LIMIT 1",
             [title]
         );
 
-        if (existingResource) {
+        if (existing) {
             return res.status(409).json({
                 error: "Conflict",
                 message: "An education resource with the same title already exists",
@@ -65,12 +65,12 @@ const addEducationResource = async (req, res) => {
             });
         }
 
-        // Insert new resource
-        const insertQuery = `
-            INSERT INTO education (title, description, read_time, icon, category, level)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `;
-        await userQuery(insertQuery, [title, description, read_time, icon, category, level]);
+        // Insert new education resource
+        await userQuery(
+            `INSERT INTO education (title, description, read_time, icon, category, level)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [title, description, read_time, icon, category, level]
+        );
 
         return res.status(201).json({
             message: "Education resource added successfully",
@@ -90,12 +90,13 @@ const addEducationResource = async (req, res) => {
 };
 
 const getEducationResources = async (req, res) => {
-    const { level, category } = req.query;
+    const { level, category, readStatus = 'all', limit = 10, offset = 0 } = req.query;
+    const user = req.user;
 
-    // Allowed levels
-    const validLevels = ['All Levels', 'Beginner', 'Medium', 'Expert'];
+    const validLevels = ['All', 'Beginner', 'Medium', 'Expert'];
+    const validReadStatuses = ['all', 'read', 'unread'];
 
-    // Validate required query parameters
+    // Validate query params
     if (!level || typeof level !== 'string' || !category || typeof category !== 'string') {
         return res.status(400).json({
             error: "Bad Request",
@@ -105,7 +106,7 @@ const getEducationResources = async (req, res) => {
         });
     }
 
-    if (!validLevels.includes(level)) {
+    if (!validLevels.includes(level.trim())) {
         return res.status(400).json({
             error: "Bad Request",
             message: `'${level}' is not a valid level. Allowed values: ${validLevels.join(', ')}`,
@@ -114,26 +115,84 @@ const getEducationResources = async (req, res) => {
         });
     }
 
+    if (!validReadStatuses.includes(readStatus)) {
+        return res.status(400).json({
+            error: "Bad Request",
+            message: `'${readStatus}' is not a valid readStatus. Allowed values: ${validReadStatuses.join(', ')}`,
+            statusCode: 400,
+            status: "error"
+        });
+    }
+
     try {
-        const query = `
-            SELECT * FROM education
-            WHERE level = ? AND category = ?
-        `;
+        const values = [];
+        let query = `SELECT * FROM education WHERE 1=1`;
 
-        const resources = await userQuery(query, [level.trim(), category.trim()]);
+        // Apply level filter
+        if (level !== 'All') {
+            query += ` AND level = ?`;
+            values.push(level.trim());
+        }
 
-        if (resources.length === 0) {
+        // Apply category filter
+        if (category !== 'All') {
+            query += ` AND category = ?`;
+            values.push(category.trim());
+        }
+
+        // Pagination
+        query += ` LIMIT ? OFFSET ?`;
+        values.push(Number(limit), Number(offset));
+
+        // Fetch filtered resources
+        const resources = await userQuery(query, values);
+
+        if (!resources.length) {
             return res.status(404).json({
                 error: "Not Found",
-                message: "No education resources found for the specified level and category.",
+                message: "No education resources found for the given filters.",
                 statusCode: 404,
                 status: "error"
             });
         }
 
+        // Get user track for read/unread filtering
+        const resourceIds = resources.map(r => r.id);
+        const placeholders = resourceIds.map(() => '?').join(',');
+
+        let readResourceIds = new Set();
+
+        if (resourceIds.length) {
+            const userTrackQuery = `
+                SELECT education_id 
+                FROM education_user_track 
+                WHERE user_id = ? 
+                AND education_id IN (${placeholders})
+            `;
+            const trackRows = await userQuery(userTrackQuery, [user.userId, ...resourceIds]);
+            readResourceIds = new Set(trackRows.map(row => row.education_id));
+        }
+
+        // Add read status & apply final filtering
+        const filteredResources = resources
+            .map(resource => ({
+                ...resource,
+                userHasRead: readResourceIds.has(resource.id)
+            }))
+            .filter(resource => {
+                if (readStatus === 'read') return resource.userHasRead;
+                if (readStatus === 'unread') return !resource.userHasRead;
+                return true; // 'all'
+            });
+
         return res.status(200).json({
             message: "Education resources retrieved successfully",
-            data: resources,
+            data: filteredResources,
+            pagination: {
+                limit: Number(limit),
+                offset: Number(offset),
+                count: filteredResources.length
+            },
             statusCode: 200,
             status: "success"
         });
@@ -283,7 +342,9 @@ const deleteEducationResources = async (req, res) => {
 
         // Delete resource
         await userQuery("DELETE FROM education WHERE id = ?", [id]);
-
+        // delete related content
+        await userQuery("DELETE FROM education_content WHERE education_id = ?", [id]);
+        
         return res.status(200).json({
             message: "Education resource deleted successfully",
             statusCode: 200,
